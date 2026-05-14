@@ -1,0 +1,16 @@
+<svg width="616" height="353" viewBox="0 0 616 353" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="616" height="353" fill="#090A0D"/>
+  <path d="M0 0h616v353H0z" fill="url(#g)"/>
+  <path d="M0 282h616v71H0z" fill="#050506" fill-opacity=".62"/>
+  <path d="M34 46h548M34 307h548" stroke="#E6EEFF" stroke-opacity=".22"/>
+  <path d="M477 0 616 0 616 139" stroke="#C8D9FF" stroke-opacity=".28"/>
+  <text x="34" y="202" fill="#F2F4F8" font-size="32" font-family="Segoe UI, Arial, sans-serif" font-weight="600">Steam Artwork Unavailable</text>
+  <text x="34" y="237" fill="#AEB7C8" font-size="16" font-family="Segoe UI, Arial, sans-serif">recently played</text>
+  <defs>
+    <linearGradient id="g" x1="0" x2="616" y1="0" y2="353">
+      <stop stop-color="#1B2430"/>
+      <stop offset=".48" stop-color="#0B0D13"/>
+      <stop offset="1" stop-color="#24242B"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,0 +1,27 @@
+{
+  "name": "kaedehara-js",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Realtime identity/presence hub centered around Discord activity",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/svelte": "^7.0.0",
+    "@astrojs/vercel": "^8.1.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "astro": "^5.7.0",
+    "svelte": "^5.25.0",
+    "tailwindcss": "^4.1.0",
+    "valibot": "^1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

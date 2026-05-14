@@ -1,0 +1,44 @@
+---
+export interface Props {
+  name: string;
+  playtimeHours: number;
+  lastPlayed: string;
+  imageUrl: string;
+  appid: number;
+}
+
+const { name, playtimeHours, lastPlayed, imageUrl, appid } = Astro.props;
+
+// Multiple CDN fallbacks for Steam images
+const akamaiUrl = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`;
+const fallbackUrls = [
+  imageUrl,                                                    // Cloudflare CDN
+  akamaiUrl,                                                   // Akamai CDN
+  `/assets/steam-fallback.svg`,                                // local fallback
+];
+---
+
+<a
+  href={`https://store.steampowered.com/app/${appid}/`}
+  target="_blank"
+  rel="noopener noreferrer"
+  class="overflow-hidden border border-border bg-card transition-transform duration-300 hover:scale-[1.01]"
+>
+  <!-- Cover image spans full top -->
+  <div class="relative h-24 w-full border-b border-border">
+    <img
+      src={imageUrl}
+      alt={name}
+      class="h-full w-full object-cover"
+      loading="lazy"
+      onerror={`var f='${akamaiUrl}';this.onerror=function(){this.onerror=null;this.src='/assets/steam-fallback.svg'};this.src=f`}
+    />
+  </div>
+
+  <!-- Game details below -->
+  <div class="p-3">
+    <p class="truncate text-lg text-text-primary" title={name}>{name}</p>
+    <p class="text-sm text-text-secondary">{playtimeHours} hrs on record</p>
+    <p class="text-sm text-text-muted">last played on {lastPlayed}</p>
+  </div>
+</a>

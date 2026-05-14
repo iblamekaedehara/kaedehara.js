@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #0d0d0d;
+  --color-card: #1a1a1a;
+  --color-card-hover: #222222;
+  --color-border: #2a2a2a;
+  --color-text-primary: #e0e0e0;
+  --color-text-secondary: #a0a0a0;
+  --color-text-muted: #6b6b6b;
+  --color-accent-green: #4ade80;
+  --color-accent-amber: #facc15;
+  --color-accent-red: #f87171;
+  --color-accent-gray: #6b7280;
+  --color-spotify: #1db954;
+  --color-steam: #2a475e;
+  --color-anilist: #3db4f2;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  ::selection {
+    background-color: rgba(74, 222, 128, 0.3);
+    color: var(--color-text-primary);
+  }
+}
+
+@layer utilities {
+  .skeleton-pulse {
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+    background: linear-gradient(
+      90deg,
+      var(--color-card) 25%,
+      var(--color-card-hover) 50%,
+      var(--color-card) 75%
+    );
+    background-size: 200% 100%;
+  }
+
+  @keyframes skeleton-pulse {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  .fade-in {
+    animation: fade-in 0.3s ease-in-out;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .status-online {
+    --status-color: var(--color-accent-green);
+  }
+  .status-idle {
+    --status-color: var(--color-accent-amber);
+  }
+  .status-dnd {
+    --status-color: var(--color-accent-red);
+  }
+  .status-offline {
+    --status-color: var(--color-accent-gray);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
