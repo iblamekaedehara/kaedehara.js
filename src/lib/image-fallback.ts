@@ -1,11 +1,13 @@
 /**
- * Discord CDN asset URL helpers and deterministic fallback resolution.
+ * Discord CDN asset URL helpers and generic fallbacks.
  *
- * FEATURES for developers:
- * - Construct Discord CDN asset/avatar URLs
- * - The activity-icons module handles category-aware fallbacks (game/music/code/etc.)
- * - This module provides generic "nothing worked" fallbacks and URL construction
- * - Steam assets are NOT used as universal fallbacks (per architecture audit)
+ * ARCHITECTURE: Discord CDN is OPTIONAL best-effort only.
+ * Discord RPC should only provide identity + metadata (app name, details, state).
+ * Artwork authority lives in the unified resolver (artwork-resolver.ts) —
+ * Steam CDN → SteamGridDB → persistent cache.
+ *
+ * On image load failure in PresenceCard, handleImageError calls /api/game-image
+ * which delegates to the unified artwork resolver.
  */
 
 const DISCORD_CDN_BASE = "https://cdn.discordapp.com";
@@ -35,5 +37,5 @@ export function getDiscordAvatarUrl(
  * Category-specific fallbacks are in activity-icons.ts.
  */
 export function getGenericFallback(): string {
-  return "/assets/game-fallback.svg";
+  return "/assets/generic-fallback.svg";
 }

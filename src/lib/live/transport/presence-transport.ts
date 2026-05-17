@@ -262,6 +262,7 @@ class PresenceTransport {
     try {
       const msg = JSON.parse(event.data);
       if (msg.op === 1) {
+        console.log("[presence-transport] Hello received, heartbeat_interval:", msg.d?.heartbeat_interval);
         this.heartbeatIntervalMs = msg.d?.heartbeat_interval ?? 0;
         if (this.heartbeatIntervalMs > 0) {
           this.ws?.send(JSON.stringify({ op: 2, d: { subscribe_to_id: DISCORD_USER_ID } }));
@@ -273,14 +274,17 @@ class PresenceTransport {
         return;
       }
       if (msg.op === 0 && (msg.t === "INIT_STATE" || msg.t === "PRESENCE_UPDATE")) {
+        console.log("[presence-transport] Raw payload msg.t:", msg.t, "msg.d:", JSON.stringify(msg.d));
         const validated = validatePresencePayload(msg.d);
         if (validated) {
+          console.log("[presence-transport] Validated. activities count:", validated.activities?.length, "activities:", validated.activities);
           this.sequenceId++;
+          // Merge partial updates into existing state (Lanyard may only send changed fields)
           this.currentState = {
-            status: validated.discord_status,
-            user: validated.discord_user,
-            activities: validated.activities,
-            spotify: validated.spotify ?? null,
+            status: validated.discord_status ?? this.currentState.status,
+            user: validated.discord_user ?? this.currentState.user,
+            activities: validated.activities ?? this.currentState.activities,
+            spotify: validated.spotify !== undefined ? (validated.spotify ?? null) : this.currentState.spotify,
             freshness: { lastAuthoritativeAt: Date.now(), sequenceId: this.sequenceId, transportGeneration: this.transportGeneration, source: "live" },
           };
           this.notifyPresence();
@@ -289,7 +293,9 @@ class PresenceTransport {
           this.resetStaleTimers();
         }
       }
-    } catch {}
+    } catch (err) {
+      console.error("[presence-transport] Message handling failed:", err);
+    }
   };
 
   private handleClose = (): void => {

@@ -50,10 +50,11 @@ export const LANYARD_WS_URL = "wss://api.lanyard.rest/socket";
 export const MAX_ACTIVITY_CARDS = 2;
 
 // Discord activity type constants (matching Lanyard spec)
-// Type 2 is always "Listening" (which is exclusively Spotify via Lanyard)
 export const ACTIVITY_TYPES = {
   GAME: 0,
+  STREAMING: 1,
   SPOTIFY: 2,
   WATCHING: 3,
+  CUSTOM: 4,
   COMPETING: 5,
 } as const;

@@ -8,14 +8,6 @@ export interface Props {
 }
 
 const { name, playtimeHours, lastPlayed, imageUrl, appid } = Astro.props;
-
-// Multiple CDN fallbacks for Steam images
-const akamaiUrl = `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`;
-const fallbackUrls = [
-  imageUrl,                                                    // Cloudflare CDN
-  akamaiUrl,                                                   // Akamai CDN
-  `/assets/steam-fallback.svg`,                                // local fallback
-];
 ---
 
 <a
@@ -25,14 +17,36 @@ const fallbackUrls = [
   class="overflow-hidden border border-border bg-card transition-transform duration-300 hover:scale-[1.01]"
 >
   <!-- Cover image spans full top -->
-  <div class="relative h-24 w-full border-b border-border">
+  <div class="relative h-24 w-full border-b border-border" data-noimg="0">
     <img
       src={imageUrl}
       alt={name}
+      data-appid={appid}
+      data-fi="0"
       class="h-full w-full object-cover"
       loading="lazy"
-      onerror={`var f='${akamaiUrl}';this.onerror=function(){this.onerror=null;this.src='/assets/steam-fallback.svg'};this.src=f`}
+      onerror={`
+        var a=this.dataset.appid,i=parseInt(this.dataset.fi||0),s=[
+          'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/'+a+'/header.jpg',
+          'https://cdn.cloudflare.steamstatic.com/steam/apps/'+a+'/capsule_616x353.jpg',
+          'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/'+a+'/capsule_616x353.jpg'
+        ];
+        if(i<s.length){this.dataset.fi=i+1;this.src=s[i];}
+        else{this.onerror=null;this.style.display='none';var ph=this.parentElement.querySelector('[data-placeholder]');if(ph)ph.style.display='flex';}
+      `}
     />
+    <div
+      data-placeholder
+      style="display:none"
+      class="absolute inset-0 items-center justify-center bg-card"
+      aria-hidden="true"
+    >
+      <svg class="h-8 w-8 opacity-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <path d="m21 15-5-5L5 21" />
+      </svg>
+    </div>
   </div>
 
   <!-- Game details below -->

@@ -6,59 +6,103 @@
 
   let { activity }: { activity: DiscordActivity } = $props();
 
+  const category = $derived(categorizeActivity(activity.application_id, activity.name, activity.type));
+  const fallbackIcon = $derived(getFallbackIcon(category));
+
   let imageError = $state(false);
-  let resolvedImageUrl = $state("");
+  let resolvedImageUrl = $state(getFallbackIcon(categorizeActivity(activity.application_id, activity.name, activity.type)));
   let now = $state(Date.now());
-  let unsubClock: (() => void) | null = null;
+
+  // Bug 2: module-level cancelled flag, reset per $effect run, read by stable handleImageError
+  let cancelled = false;
 
   // Resolve the best image URL: Discord CDN > external URL > type-aware fallback
   $effect(() => {
+    cancelled = false;
     const asset = activity.assets?.large_image;
     const appId = activity.application_id;
-    const category = categorizeActivity(appId, activity.name);
-    imageError = false; // Reset on every activity change
+    imageError = false;
 
     if (!asset) {
-      resolvedImageUrl = getFallbackIcon(category);
-      return;
+      resolvedImageUrl = fallbackIcon;
+      return () => { cancelled = true; };
     }
 
     if (asset.startsWith("mp:")) {
-      // Format 1: mp:/http... (encoded absolute URL)
-      const httpIdx = asset.indexOf("/http");
-      if (httpIdx > 0) {
-        const encoded = asset.substring(httpIdx + 1);
-        try { resolvedImageUrl = decodeURIComponent(encoded); }
-        catch { resolvedImageUrl = encoded; }
-        return;
+      // Bug 3: correct mp:external decoding for Lanyard's actual payload format
+      if (asset.startsWith("mp:external/")) {
+        const withoutPrefix = asset.slice("mp:external/".length);
+        const slashIdx = withoutPrefix.indexOf("/");
+        if (slashIdx !== -1) {
+          // Format A: embedded absolute URL (percent-encoded)
+          // "mp:external/{hash}/https/cdn.example.com/image.png"
+          const afterHash = withoutPrefix.slice(slashIdx + 1);
+          const protocolSepIdx = afterHash.indexOf("/");
+          if (protocolSepIdx !== -1) {
+            resolvedImageUrl = decodeURIComponent(
+              afterHash.slice(0, protocolSepIdx) + "://" + afterHash.slice(protocolSepIdx + 1),
+            );
+          } else {
+            resolvedImageUrl = fallbackIcon;
+          }
+        } else {
+          // Format B: bare media proxy hash — no embedded URL
+          // "mp:external/{hash}" → use Discord media proxy
+          resolvedImageUrl = `https://media.discordapp.net/external/${withoutPrefix}`;
+        }
+      } else {
+        // Non-external mp: asset — use Discord media proxy
+        const proxyPath = asset.slice("mp:".length);
+        if (proxyPath) {
+          resolvedImageUrl = `https://media.discordapp.net/${proxyPath}`;
+        } else {
+          resolvedImageUrl = fallbackIcon;
+        }
       }
-      // Format 2: mp:external/{hash} — Discord media proxy
-      const proxyPath = asset.slice("mp:".length);
-      if (proxyPath) {
-        resolvedImageUrl = `https://media.discordapp.net/${proxyPath}`;
-        return;
-      }
-      resolvedImageUrl = getFallbackIcon(category);
-      return;
+      return () => { cancelled = true; };
     }
 
     if (appId && !asset.startsWith("http")) {
       resolvedImageUrl = getDiscordAssetUrl(appId, asset, "webp", 128);
-      return;
-    }
-
-    if (asset.startsWith("http")) {
+    } else if (asset.startsWith("http")) {
       resolvedImageUrl = asset;
-      return;
+    } else {
+      resolvedImageUrl = fallbackIcon;
     }
 
-    resolvedImageUrl = getFallbackIcon(category);
+    return () => { cancelled = true; };
   });
 
-  // Subscribe to shared clock so elapsed time updates every second
+  // Bug 2: stable async function — never re-created, closed over module-level `cancelled`
+  async function handleImageError() {
+    if (activity.type !== 0) {
+      imageError = true;
+      return;
+    }
+    try {
+      // Discord application_id is NOT a Steam app ID — do not pass it.
+      // The API route resolves by game name via SteamGridDB.
+      const res = await fetch(
+        `/api/game-image?name=${encodeURIComponent(activity.name)}`,
+        { signal: AbortSignal.timeout(5000) },
+      );
+      if (!cancelled && res.ok) {
+        const { url } = await res.json() as { url: string | null };
+        if (!cancelled && url) {
+          resolvedImageUrl = url;
+          return;
+        }
+      }
+    } catch {
+      // fetch failed or aborted — fall through to error state
+    }
+    if (!cancelled) imageError = true;
+  }
+
+  // Bug 1: local const instead of outer let — no leak
   $effect(() => {
-    unsubClock = sharedClock.subscribe((t) => (now = t));
-    return () => unsubClock?.();
+    const unsub = sharedClock.subscribe((t) => (now = t));
+    return () => unsub();
   });
 
   let displayTime = $derived.by(() => {
@@ -76,15 +120,12 @@
     }
     return null;
   });
-
-  const category = $derived(categorizeActivity(activity.application_id, activity.name));
-  const fallbackIcon = $derived(getFallbackIcon(category));
 </script>
 
 <div class="fade-in flex items-start gap-3 border border-border bg-card p-4">
   <div class="h-12 w-12 flex-shrink-0 overflow-hidden">
     {#if !imageError}
-      <img src={resolvedImageUrl} alt={activity.name} class="h-full w-full object-cover" onerror={() => (imageError = true)} />
+      <img src={resolvedImageUrl} alt={activity.name} class="h-full w-full object-cover" onerror={handleImageError} />
     {:else}
       <img src={fallbackIcon} alt={activity.name} class="h-full w-full object-cover" />
     {/if}

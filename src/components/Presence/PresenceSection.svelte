@@ -3,9 +3,9 @@
   import { getPresenceTransport } from "../../lib/live/transport/presence-transport";
   import type { PresenceState } from "../../lib/live/transport/presence-transport";
   import { MAX_ACTIVITY_CARDS, ACTIVITY_TYPES, PROFILE, SOCIAL_LINKS } from "../../lib/constants";
-  import type { DiscordActivity } from "../../lib/types";
+  import type { DiscordActivity, SpotifyData } from "../../lib/types";
   import PresenceCard from "./PresenceCard.svelte";
-  import SpotifyCard from "../Spotify/SpotifyCard.svelte";
+  import SpotifySection from "../Spotify/SpotifySection.svelte";
 
   const transport = getPresenceTransport();
 
@@ -16,33 +16,34 @@
   let freshnessSource = $state<string | null>(null);
   let presenceState = $state<PresenceState | null>(null);
 
+  let spotifyCard = $derived(presenceState?.spotify || null);
+
   // Only show live status when freshness source is authoritative (live or soft-stale)
   let isLive = $derived(
     freshnessSource === "live" || freshnessSource === "soft-stale"
   );
 
-  let spotifyCard = $derived(presenceState?.spotify || null);
+  // Show activities: games first, then others — skip Spotify & Custom Status
   let priorityActivities = $derived.by(() => {
     if (!presenceState?.activities) return [];
-    const activities = presenceState.activities;
-    const games: DiscordActivity[] = [];
-    const nonGames: DiscordActivity[] = [];
-    for (const activity of activities) {
-      const type = activity.type as number;
-      if (type === ACTIVITY_TYPES.GAME) {
-        games.push(activity);
-      } else if (type !== ACTIVITY_TYPES.SPOTIFY && activity.name !== "Custom Status") {
-        nonGames.push(activity);
-      }
-    }
-    const merged = [...games, ...nonGames];
-    const limit = spotifyCard ? MAX_ACTIVITY_CARDS - 1 : MAX_ACTIVITY_CARDS;
-    return merged.slice(0, Math.max(0, limit));
+    const sorted = [...presenceState.activities].sort((a, b) => {
+      // Games (type 0) before everything else
+      if ((a.type === 0) !== (b.type === 0)) return a.type === 0 ? -1 : 1;
+      return 0;
+    });
+    return sorted.filter(
+      (a) => a.type !== ACTIVITY_TYPES.SPOTIFY && a.type !== ACTIVITY_TYPES.CUSTOM && a.type !== ACTIVITY_TYPES.STREAMING
+    ).slice(0, MAX_ACTIVITY_CARDS);
   });
 
-  let hasVisibleActivity = $derived(
-    spotifyCard !== null || priorityActivities.length > 0
-  );
+  let hasVisibleActivity = $derived(priorityActivities.length > 0);
+
+  $effect(() => {
+    if (presenceState) {
+      console.log("[presence] activities:", presenceState.activities);
+      console.log("[presence] freshness:", presenceState.freshness?.source);
+    }
+  });
 
   function applyStatus(status: string) {
     switch (status) {
@@ -72,7 +73,7 @@
     unsubPresence = transport.onPresence((state) => {
       presenceState = state;
       freshnessSource = state.freshness?.source ?? null;
-      applyStatus(state.status);
+      applyStatus(state.status ?? "offline");
     });
 
     transport.connect();
@@ -127,7 +128,7 @@
   <!-- Social links bar -->
   <div class="border border-border bg-card p-4 sm:p-5">
     <div class="mb-3 border-b border-border pb-2">
-      <p class="text-xs font-medium uppercase tracking-wider text-text-muted">socials</p>
+      <p class="text-xs font-medium uppercase tracking-wider text-text-muted">my social links</p>
     </div>
     <div class="flex items-center justify-center gap-5">
       {#each SOCIAL_LINKS as link (link.name)}
@@ -138,28 +139,28 @@
     </div>
   </div>
 
-  <!-- Discord presence section -->
+  <!-- Spotify section (standalone card with its own header) -->
+  <SpotifySection spotify={spotifyCard} />
+
+  <!-- Discord presence section (hidden entirely when only Spotify is active) -->
   {#if hasVisibleActivity}
-    <section aria-label="Current Discord activity" class="border border-border bg-card p-4 sm:p-5">
+    <section aria-label="what am i doing?" class="border border-border bg-card p-4 sm:p-5">
       <div class="mb-3 border-b border-border pb-2">
-        <p class="text-xs font-medium uppercase tracking-wider text-text-muted">current discord activity</p>
+        <p class="text-xs font-medium uppercase tracking-wider text-text-muted">what am i doing rn?</p>
       </div>
       <div class="flex flex-col gap-3">
-        {#if spotifyCard}
-          <SpotifyCard spotify={spotifyCard} />
-        {/if}
         {#each priorityActivities as activity (activity.id)}
           <PresenceCard {activity} />
         {/each}
       </div>
     </section>
-  {:else if connectionState === "connected"}
+  {:else if connectionState === "connected" && !spotifyCard}
     <section class="border border-border bg-card p-4 sm:p-5">
       <div class="mb-3 border-b border-border pb-2">
-        <p class="text-xs font-medium uppercase tracking-wider text-text-muted">current discord activity</p>
+        <p class="text-xs font-medium uppercase tracking-wider text-text-muted">what am i doing rn?</p>
       </div>
       <div class="py-4 text-center text-sm text-text-secondary">
-        <p>No active Discord presence</p>
+        <p>prolly idling or offline</p>
       </div>
     </section>
   {/if}

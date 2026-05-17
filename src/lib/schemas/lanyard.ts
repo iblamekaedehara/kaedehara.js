@@ -54,20 +54,26 @@ export const SpotifyDataSchema = v.nullish(
   })
 );
 
+// Lanyard PRESENCE_UPDATE may send partial data (only changed fields),
+// so top-level fields are optional — the transport merges into existing state.
 export const LanyardPresenceSchema = v.object({
-  discord_user: DiscordUserSchema,
-  discord_status: v.union([
-    v.literal("online"),
-    v.literal("idle"),
-    v.literal("dnd"),
-    v.literal("offline"),
-  ]),
-  activities: v.array(DiscordActivitySchema),
+  discord_user: v.optional(DiscordUserSchema),
+  discord_status: v.optional(
+    v.union([
+      v.literal("online"),
+      v.literal("idle"),
+      v.literal("dnd"),
+      v.literal("offline"),
+    ])
+  ),
+  activities: v.optional(v.array(DiscordActivitySchema)),
   spotify: SpotifyDataSchema,
   listening_to_spotify: v.optional(v.boolean()),
   active_on_discord_web: v.optional(v.boolean()),
   active_on_discord_mobile: v.optional(v.boolean()),
   active_on_discord_desktop: v.optional(v.boolean()),
+  active_on_discord_embedded: v.optional(v.boolean()),
+  active_on_discord_vr: v.optional(v.boolean()),
 });
 
 export type ValidatedLanyardPresence = v.InferOutput<typeof LanyardPresenceSchema>;
