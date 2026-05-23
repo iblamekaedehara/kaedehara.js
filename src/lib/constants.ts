@@ -12,7 +12,7 @@ export const SOCIAL_LINKS = [
   },
   {
     name: "Discord",
-    url: "https://discord.com/users/1478417313525928029",
+    url: "https://discord.com/users/951275149171245126",
     icon: "/assets/discord.png",
   },
   {
