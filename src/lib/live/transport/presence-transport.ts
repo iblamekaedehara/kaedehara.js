@@ -2,12 +2,17 @@
  * Singleton Lanyard WebSocket transport with authoritative snapshot semantics.
  *
  * Key architectural principles:
- * - Discord/Lanyard payloads are AUTHORITATIVE SNAPSHOTS. Local state is REPLACED, never merged.
+ * - INIT_STATE is a FULL REPLACE — it's always a complete snapshot from Lanyard.
+ * - PRESENCE_UPDATE is a PARTIAL MERGE — Lanyard only sends changed fields.
  * - Subscribe (op:2) is sent AFTER Hello (op:1) — correct Lanyard protocol order.
  * - No dead-socket heuristic based on message recency — rely on WebSocket close event.
  * - Connection state transition managed by scheduleReconnectLocal, not handleClose.
  * - Multi-stage stale degradation: soft (2 min) → hard (10 min).
  * - Lease-based leader election with immediate heartbeat on becomeLeader.
+ *
+ * Module-level helpers (cleanupTimersLocal, scheduleReconnectLocal):
+ *   These are module-level to avoid `this` binding issues inside WebSocket event
+ *   handler closures. The PresenceTransport class passes itself explicitly.
  */
 
 import { DISCORD_USER_ID, LANYARD_WS_URL } from "../../constants";
@@ -45,13 +50,41 @@ const EMPTY_STATE: PresenceState = {
   status: "connecting", user: null, activities: [], spotify: null, freshness: null,
 };
 
+// ── Public transport interface ────────────────────────────────────────────
+
+export interface IPresenceTransport {
+  connect(): void;
+  disconnect(): void;
+  getState(): PresenceState;
+  onPresence(listener: PresenceListener): () => void;
+  onConnection(listener: ConnectionListener): () => void;
+  destroy(): void;
+}
+
+// ── Transport internals (exposed for module-level helpers) ────────────────
+
+interface TransportInternals {
+  heartbeatTimer: ReturnType<typeof setInterval> | null;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  softStaleTimer: ReturnType<typeof setTimeout> | null;
+  hardStaleTimer: ReturnType<typeof setTimeout> | null;
+  reconnectAttempts: number;
+  connectionState: ConnectionState;
+  paused: boolean;
+  leaderTab: boolean;
+  ws: WebSocket | null;
+  setConnectionState(s: ConnectionState): void;
+  broadcastConnection(): void;
+  connect(): void;
+}
+
 // ── Singleton ─────────────────────────────────────────────────────────────
 
 declare global {
   var __presenceTransport: PresenceTransport | undefined;
 }
 
-export function getPresenceTransport(): PresenceTransport {
+export function getPresenceTransport(): IPresenceTransport {
   if (typeof window === "undefined") return createNoopTransport();
   if (!globalThis.__presenceTransport) {
     globalThis.__presenceTransport = new PresenceTransport();
@@ -61,7 +94,7 @@ export function getPresenceTransport(): PresenceTransport {
 
 // ── Transport class ───────────────────────────────────────────────────────
 
-class PresenceTransport {
+class PresenceTransport implements IPresenceTransport {
   private ws: WebSocket | null = null;
   private connectionState: ConnectionState = "idle";
   private reconnectAttempts = 0;
@@ -279,14 +312,39 @@ class PresenceTransport {
         if (validated) {
           console.log("[presence-transport] Validated. activities count:", validated.activities?.length, "activities:", validated.activities);
           this.sequenceId++;
-          // Merge partial updates into existing state (Lanyard may only send changed fields)
-          this.currentState = {
-            status: validated.discord_status ?? this.currentState.status,
-            user: validated.discord_user ?? this.currentState.user,
-            activities: validated.activities ?? this.currentState.activities,
-            spotify: validated.spotify !== undefined ? (validated.spotify ?? null) : this.currentState.spotify,
-            freshness: { lastAuthoritativeAt: Date.now(), sequenceId: this.sequenceId, transportGeneration: this.transportGeneration, source: "live" },
-          };
+
+          if (msg.t === "INIT_STATE") {
+            // Full replace — INIT_STATE is always a complete snapshot
+            this.currentState = {
+              status: validated.discord_status ?? "offline",
+              user: validated.discord_user ?? null,
+              activities: validated.activities ?? [],
+              spotify: validated.spotify ?? null,
+              freshness: {
+                lastAuthoritativeAt: Date.now(),
+                sequenceId: this.sequenceId,
+                transportGeneration: this.transportGeneration,
+                source: "live",
+              },
+            };
+          } else {
+            // Partial merge — PRESENCE_UPDATE only sends changed fields
+            this.currentState = {
+              status: validated.discord_status ?? this.currentState.status,
+              user: validated.discord_user ?? this.currentState.user,
+              activities: validated.activities ?? this.currentState.activities,
+              spotify: validated.spotify !== undefined
+                ? (validated.spotify ?? null)
+                : this.currentState.spotify,
+              freshness: {
+                lastAuthoritativeAt: Date.now(),
+                sequenceId: this.sequenceId,
+                transportGeneration: this.transportGeneration,
+                source: "live",
+              },
+            };
+          }
+
           this.notifyPresence();
           this.saveToSession();
           this.broadcastState();
@@ -300,11 +358,10 @@ class PresenceTransport {
 
   private handleClose = (): void => {
     const wasConnected = this.connectionState === "connected" || this.connectionState === "connecting";
-    cleanupTimersLocal(this);
+    cleanupTimersLocal(this as unknown as TransportInternals);
     if (wasConnected) {
       this.ws = null;
-      // Let scheduler own the state transition — do NOT pre-set "reconnecting"
-      scheduleReconnectLocal(this);
+      scheduleReconnectLocal(this as unknown as TransportInternals);
     } else {
       this.ws = null;
       this.setConnectionState("idle");
@@ -318,14 +375,12 @@ class PresenceTransport {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        // Keep the socket alive — no dead-socket heuristic needed.
-        // WebSocket close event is sufficient for detecting connection loss.
         this.ws.send(JSON.stringify({ op: 3 }));
       }
     }, interval);
   }
 
-  // ── Private: Reconnection ───────────────────────────────────────────────
+  // ── Private: Notifications ──────────────────────────────────────────────
 
   private notifyPresence(): void {
     const snapshot = { ...this.currentState };
@@ -338,7 +393,7 @@ class PresenceTransport {
     for (const fn of this.connectionListeners) fn(newState);
   }
 
-  private cleanupTimers(): void { cleanupTimersLocal(this); }
+  private cleanupTimers(): void { cleanupTimersLocal(this as unknown as TransportInternals); }
 
   destroy(): void {
     this.detachNetworkListeners();
@@ -349,37 +404,39 @@ class PresenceTransport {
 }
 
 // ── Module-level helpers ──────────────────────────────────────────────────
+// These are module-level to avoid `this` binding issues inside WebSocket
+// event handler closures. The PresenceTransport class passes itself explicitly.
 
-function cleanupTimersLocal(t: PresenceTransport): void {
-  const self = t as any;
-  if (self.heartbeatTimer) { clearInterval(self.heartbeatTimer); self.heartbeatTimer = null; }
-  if (self.reconnectTimer) { clearTimeout(self.reconnectTimer); self.reconnectTimer = null; }
-  if (self.softStaleTimer) { clearTimeout(self.softStaleTimer); self.softStaleTimer = null; }
-  if (self.hardStaleTimer) { clearTimeout(self.hardStaleTimer); self.hardStaleTimer = null; }
+function cleanupTimersLocal(t: TransportInternals): void {
+  if (t.heartbeatTimer) { clearInterval(t.heartbeatTimer); t.heartbeatTimer = null; }
+  if (t.reconnectTimer) { clearTimeout(t.reconnectTimer); t.reconnectTimer = null; }
+  if (t.softStaleTimer) { clearTimeout(t.softStaleTimer); t.softStaleTimer = null; }
+  if (t.hardStaleTimer) { clearTimeout(t.hardStaleTimer); t.hardStaleTimer = null; }
 }
 
-function scheduleReconnectLocal(t: PresenceTransport): void {
-  const self = t as any;
-  if (self.connectionState === "reconnecting") return;
-  if (!navigator.onLine || self.paused) return;
-  self.setConnectionState("reconnecting");
-  self.broadcastConnection();
-  self.reconnectAttempts++;
-  const base = Math.min(1000 * Math.pow(2, self.reconnectAttempts - 1), 30000);
+function scheduleReconnectLocal(t: TransportInternals): void {
+  if (t.connectionState === "reconnecting") return;
+  if (!navigator.onLine || t.paused) return;
+  t.setConnectionState("reconnecting");
+  t.broadcastConnection();
+  t.reconnectAttempts++;
+  const base = Math.min(1000 * Math.pow(2, t.reconnectAttempts - 1), 30000);
   const delay = Math.floor(base + Math.random() * 1000);
-  self.reconnectTimer = setTimeout(() => {
-    self.reconnectTimer = null;
-    self.setConnectionState("idle");
-    self.broadcastConnection();
-    self.connect();
+  t.reconnectTimer = setTimeout(() => {
+    t.reconnectTimer = null;
+    t.setConnectionState("idle");
+    t.broadcastConnection();
+    t.connect();
   }, delay);
 }
 
-function createNoopTransport(): PresenceTransport {
+function createNoopTransport(): IPresenceTransport {
   return {
-    connect: () => {}, disconnect: () => {},
+    connect: () => {},
+    disconnect: () => {},
     getState: () => ({ ...EMPTY_STATE }),
-    onPresence: () => () => {}, onConnection: () => () => {},
+    onPresence: () => () => {},
+    onConnection: () => () => {},
     destroy: () => {},
-  } as unknown as PresenceTransport;
+  };
 }

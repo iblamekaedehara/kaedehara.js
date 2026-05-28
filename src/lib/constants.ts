@@ -1,4 +1,4 @@
-export const DISCORD_USER_ID = "1478417313525928029";
+export const DISCORD_USER_ID = "951275149171245126";
 
 export const STEAM_USER_ID = "76561199405350051";
 
@@ -12,7 +12,7 @@ export const SOCIAL_LINKS = [
   },
   {
     name: "Discord",
-    url: "https://discord.com/users/1478417313525928029",
+    url: "https://discord.com/users/951275149171245126",
     icon: "/assets/discord.png",
   },
   {
@@ -40,7 +40,6 @@ export const SOCIAL_LINKS = [
 export const PROFILE = {
   displayName: "!! kaedehara",
   bio: "~there's no limit to the larp.",
-  avatarPath: "/assets/pfp.jpg",
   avatarFallback: "/assets/avatar-fallback.svg",
 } as const;
 

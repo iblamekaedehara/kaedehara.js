@@ -23,3 +23,8 @@ Thumbs.db
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+# Archives (not source)
+*.zip
+*.tar.gz
+*.rar

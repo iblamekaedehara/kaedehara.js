@@ -47,7 +47,7 @@ export interface RecentActivityEntry {
 }
 
 export interface AniListSnapshot {
-  currentlyWatching: string | null;
+  currentlyWatching: string[];
   recentActivity: RecentActivityEntry[];
 }
 
@@ -142,7 +142,7 @@ export async function fetchAniListSnapshot(): Promise<AniListSnapshot> {
   recentActivity.sort((a, b) => b.createdAt - a.createdAt);
 
   return {
-    currentlyWatching: currentlyWatchingTitles[0] ?? null,
+    currentlyWatching: currentlyWatchingTitles,
     recentActivity: recentActivity.slice(0, 3),
   };
 }

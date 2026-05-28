@@ -1,4 +1,4 @@
-import { resolveBestArtworkUrl } from "./artwork-resolver";
+import { resolveSteamHero } from "./media";
 
 export interface SteamGameData {
   appid: number;
@@ -49,24 +49,14 @@ function formatLastPlayed(timestamp: number): string {
 const NON_STEAM_THRESHOLD = 2_000_000_000;
 
 // Cache of resolved real appids for non-Steam game names
-const _resolvedAppIdCache = new Map<string, number | null>();
+const _resolvedAppIdCache = new Map<string, { id: number | null; resolvedAt: number }>();
 const RESOLVED_CACHE_TTL_MS = 24 * 3600_000; // 24 hours
-let _cacheLastPurged = Date.now();
 
-/**
- * For non-Steam shortcuts, search the public Steam store API by name
- * to find the real Steam appid (and therefore real CDN artwork).
- * Returns the real appid, or null if no match found.
- */
 async function resolveNonSteamAppId(name: string): Promise<number | null> {
-  // Purge cache once per day
-  if (Date.now() - _cacheLastPurged > RESOLVED_CACHE_TTL_MS) {
-    _resolvedAppIdCache.clear();
-    _cacheLastPurged = Date.now();
-  }
-
   const cached = _resolvedAppIdCache.get(name);
-  if (cached !== undefined) return cached;
+  if (cached && Date.now() - cached.resolvedAt < RESOLVED_CACHE_TTL_MS) {
+    return cached.id;
+  }
 
   try {
     const searchUrl = new URL("https://store.steampowered.com/api/storesearch/");
@@ -76,27 +66,26 @@ async function resolveNonSteamAppId(name: string): Promise<number | null> {
 
     const res = await fetch(searchUrl.toString(), { signal: AbortSignal.timeout(5000) });
     if (!res.ok) {
-      _resolvedAppIdCache.set(name, null);
+      _resolvedAppIdCache.set(name, { id: null, resolvedAt: Date.now() });
       return null;
     }
 
     const data: SteamStoreSearchResult = await res.json();
     const items = data?.items ?? [];
-
-    // Find the closest name match (Steam store search is fuzzy)
     const lower = name.toLowerCase();
     const match = items.find((item) => item.name.toLowerCase() === lower)
-      ?? items[0]; // fallback to first result
+      ?? items[0];
 
     if (match?.id) {
-      _resolvedAppIdCache.set(name, match.id);
+      _resolvedAppIdCache.set(name, { id: match.id, resolvedAt: Date.now() });
       return match.id;
     }
 
-    _resolvedAppIdCache.set(name, null);
+    console.warn(`[steam] Could not resolve real appid for non-Steam game: "${name}"`);
+    _resolvedAppIdCache.set(name, { id: null, resolvedAt: Date.now() });
     return null;
   } catch {
-    _resolvedAppIdCache.set(name, null);
+    _resolvedAppIdCache.set(name, { id: null, resolvedAt: Date.now() });
     return null;
   }
 }
@@ -138,7 +127,7 @@ export async function fetchSteamData(): Promise<SteamResult> {
       .sort((a, b) => (b.rtime_last_played ?? 0) - (a.rtime_last_played ?? 0))
       .slice(0, 3);
 
-    // Resolve real appids for non-Steam games, then resolve artwork for all games
+    // Resolve real appids for non-Steam games, then resolve artwork via semantic pipeline
     const resolved = await Promise.all(
       raw.map(async (g) => {
         let effectiveAppId = g.appid;
@@ -150,14 +139,12 @@ export async function fetchSteamData(): Promise<SteamResult> {
           if (realAppId) effectiveAppId = realAppId;
         }
 
-        // Resolve artwork through the unified pipeline for known appids
-        let imageUrl = "";
+        // Resolve hero artwork through the semantic pipeline (SGDB heroes → Steam CDN)
+        let imageUrl = "/assets/game-fallback.svg";
         if (!isNonSteam || effectiveAppId !== g.appid) {
-          // Real Steam appid — use the unified resolver (Steam CDN → SteamGridDB)
-          const resolvedUrl = await resolveBestArtworkUrl(effectiveAppId, g.name);
-          imageUrl = resolvedUrl ?? "";
+          const hero = await resolveSteamHero(effectiveAppId, g.name);
+          imageUrl = hero.url;
         }
-        // For unresolved non-Steam games, imageUrl stays empty — triggers onerror fallback in SteamCard
 
         return {
           appid: effectiveAppId,
@@ -184,7 +171,9 @@ export async function fetchSteamData(): Promise<SteamResult> {
       iconUrl: g.iconUrl,
     }));
 
-    return { games, totalPlaytime: totalPlaytimeHours };
+    const result = { games, totalPlaytime: totalPlaytimeHours };
+    _steamCache = { data: result, ts: Date.now() };
+    return result;
   } catch (e) {
     console.error("[steam] Failed:", e);
     return { games: [], totalPlaytime: 0 };

@@ -6,17 +6,13 @@ import AniListSection from "../components/AniList/AniListSection.astro";
 ---
 
 <BaseLayout>
-  <main class="mx-auto flex min-h-screen max-w-[580px] flex-col px-4 py-6 md:px-6 md:py-10">
+  <main class="mx-auto flex min-h-screen w-full max-w-[1060px] flex-col px-4 py-5 sm:px-6 md:py-8">
     <!-- Hydrated presence section: avatar, status, Discord rich presence cards, social links -->
     <PresenceSection client:load />
 
-    <!-- Steam section -->
-    <div class="mt-6">
+    <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)] lg:items-start">
       <SteamSection />
-    </div>
 
-    <!-- AniList section -->
-    <div class="mt-6">
       <AniListSection />
     </div>
   </main>

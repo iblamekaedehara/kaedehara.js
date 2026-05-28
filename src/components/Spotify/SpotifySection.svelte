@@ -6,10 +6,11 @@
 </script>
 
 {#if spotify}
-  <section aria-label="Spotify" class="border border-border bg-card p-4 sm:p-5">
-    <div class="mb-3 border-b border-border pb-2">
-      <p class="text-xs font-medium uppercase tracking-wider text-text-muted">
-        Listening on Spotify to
+  <section aria-label="Spotify" class="card-shell p-4 sm:p-5">
+    <div class="mb-3 flex items-center justify-between gap-4 border-b border-border-soft pb-3">
+      <p class="text-xs font-semibold uppercase tracking-wider text-text-muted">
+        listening on spotify to
+      </p>
       </p>
     </div>
     <SpotifyCard spotify={spotify} />

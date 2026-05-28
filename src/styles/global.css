@@ -1,17 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-surface: #0d0d0d;
-  --color-card: #1a1a1a;
-  --color-card-hover: #222222;
-  --color-border: #2a2a2a;
-  --color-text-primary: #e0e0e0;
-  --color-text-secondary: #a0a0a0;
-  --color-text-muted: #6b6b6b;
-  --color-accent-green: #4ade80;
-  --color-accent-amber: #facc15;
-  --color-accent-red: #f87171;
-  --color-accent-gray: #6b7280;
+  --color-surface: #101112;
+  --color-card: #1c1d20;
+  --color-card-hover: #232427;
+  --color-panel: #18191b;
+  --color-border: #2b2c30;
+  --color-border-soft: #242529;
+  --color-banner: #858583;
+  --color-text-primary: #ececec;
+  --color-text-secondary: #bebec2;
+  --color-text-muted: #7f8085;
+  --color-accent-green: #35c66b;
+  --color-accent-amber: #e3be42;
+  --color-accent-red: #f15b5b;
+  --color-accent-gray: #77797e;
   --color-spotify: #1db954;
   --color-steam: #2a475e;
   --color-anilist: #3db4f2;
@@ -33,7 +36,9 @@
   }
 
   body {
-    background-color: var(--color-surface);
+    background:
+      radial-gradient(circle at 50% -10%, rgba(255, 255, 255, 0.04), transparent 28rem),
+      var(--color-surface);
     color: var(--color-text-primary);
     font-family: var(--font-sans);
     min-height: 100vh;
@@ -47,7 +52,6 @@
 
   img {
     max-width: 100%;
-    height: auto;
     display: block;
   }
 
@@ -80,6 +84,31 @@
 
   .fade-in {
     animation: fade-in 0.3s ease-in-out;
+  }
+
+  .card-shell {
+    border: 1px solid var(--color-border-soft);
+    border-radius: 8px;
+    background: var(--color-card);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  }
+
+  .inner-card {
+    border: 1px solid var(--color-border-soft);
+    border-radius: 8px;
+    background: var(--color-panel);
+  }
+
+  .social-icon {
+    opacity: 0.86;
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease;
+  }
+
+  .social-icon:hover {
+    opacity: 1;
+    transform: translateY(-1px);
   }
 
   @keyframes fade-in {

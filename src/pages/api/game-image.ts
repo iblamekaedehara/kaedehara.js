@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import { resolveArtworkByName, resolveBestArtworkUrl } from "../../lib/artwork-resolver";
+import { resolveActivityIcon, resolveSteamHero } from "../../lib/media";
 
 function json(body: unknown, status: number, cacheControl?: string) {
   return new Response(JSON.stringify(body), {
@@ -16,17 +16,18 @@ export const GET: APIRoute = async ({ request }) => {
   const name = url.searchParams.get("name")?.trim();
   const appidStr = url.searchParams.get("appid");
   const appid = appidStr ? parseInt(appidStr, 10) : null;
+  const mode = url.searchParams.get("mode");
 
   if (!name) return json({ url: null }, 400);
 
-  // Use the unified resolver — it handles caching internally
-  let resolvedUrl: string | null = null;
-
-  if (appid && appid > 0) {
-    resolvedUrl = await resolveBestArtworkUrl(appid, name);
-  } else {
-    resolvedUrl = await resolveArtworkByName(name);
+  // Presence cards: SGDB icons tab (square PNGs)
+  if (mode === "icon") {
+    const media = await resolveActivityIcon(name);
+    return json({ url: media.url }, 200, "public, s-maxage=86400");
   }
 
-  return json({ url: resolvedUrl }, 200, "public, s-maxage=86400");
+  // Steam activity: SGDB heroes → Steam CDN
+  const heroAppid = appid && appid > 0 ? appid : 0;
+  const media = await resolveSteamHero(heroAppid, name);
+  return json({ url: media.url }, 200, "public, s-maxage=86400");
 };
