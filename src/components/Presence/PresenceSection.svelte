@@ -87,13 +87,14 @@
         body: JSON.stringify({ activities }),
         signal: AbortSignal.timeout(6000),
       });
-      // If a newer resolution already completed, discard this result
-      if (myGeneration < resolveGeneration) return [];
-      if (!res.ok) return [];
+      // If a newer resolution already completed, keep the current state — never nuke the UI
+      if (myGeneration < resolveGeneration) return resolvedActivities;
+      if (!res.ok) return resolvedActivities;
       const data = await res.json() as { activities: ResolvedActivity[] };
       return data.activities ?? [];
     } catch {
-      if (myGeneration < resolveGeneration) return [];
+      // On error, preserve existing state if a newer generation already completed
+      if (myGeneration < resolveGeneration) return resolvedActivities;
       return [];
     }
   }

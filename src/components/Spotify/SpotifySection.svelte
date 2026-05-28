@@ -8,10 +8,7 @@
 {#if spotify}
   <section aria-label="Spotify" class="card-shell p-4 sm:p-5">
     <div class="mb-3 flex items-center justify-between gap-4 border-b border-border-soft pb-3">
-      <p class="text-xs font-semibold uppercase tracking-wider text-text-muted">
-        listening on spotify to
-      </p>
-      </p>
+      <span class="text-xs font-semibold uppercase tracking-wider text-text-muted">listening on spotify to</span>
     </div>
     <SpotifyCard spotify={spotify} />
   </section>

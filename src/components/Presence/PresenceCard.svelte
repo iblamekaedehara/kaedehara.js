@@ -5,6 +5,13 @@
   let { activity, imageUrl }: { activity: DiscordActivity; imageUrl: string } = $props();
 
   let now = $state(Date.now());
+  let startTimestamp = $state<number | null>(null);
+
+  // Snap the activity start timestamp whenever it changes, so the clock
+  // always tracks the authoritative start even across rapid prop updates.
+  $effect(() => {
+    startTimestamp = activity.timestamps?.start ?? null;
+  });
 
   const activityVerb = $derived.by(() => {
     switch (activity.type) {
@@ -17,8 +24,8 @@
   });
 
   const displayTime = $derived.by(() => {
-    if (!activity.timestamps?.start) return null;
-    const elapsed = now - activity.timestamps.start;
+    if (startTimestamp === null) return null;
+    const elapsed = now - startTimestamp;
     if (elapsed < 0) return null;
     const hrs = Math.floor(elapsed / 3600000);
     const mins = Math.floor((elapsed % 3600000) / 60000);

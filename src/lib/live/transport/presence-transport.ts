@@ -328,11 +328,32 @@ class PresenceTransport implements IPresenceTransport {
               },
             };
           } else {
-            // Partial merge — PRESENCE_UPDATE only sends changed fields
+            // Partial merge — PRESENCE_UPDATE only sends changed fields.
+            // Lanyard often omits timestamps/assets on update payloads, so
+            // deep-merge each activity by id to preserve those fields from
+            // the existing state.
+            const incoming = validated.activities;
+            const existingActivities = this.currentState.activities ?? [];
+            const mergedActivities = incoming
+              ? incoming.map((incomingAct) => {
+                  const existing = existingActivities.find(
+                    (a) => a.id === incomingAct.id
+                  );
+                  return existing
+                    ? {
+                        ...existing,
+                        ...incomingAct,
+                        timestamps: incomingAct.timestamps ?? existing.timestamps,
+                        assets: incomingAct.assets ?? existing.assets,
+                      }
+                    : incomingAct;
+                })
+              : this.currentState.activities;
+
             this.currentState = {
               status: validated.discord_status ?? this.currentState.status,
               user: validated.discord_user ?? this.currentState.user,
-              activities: validated.activities ?? this.currentState.activities,
+              activities: mergedActivities,
               spotify: validated.spotify !== undefined
                 ? (validated.spotify ?? null)
                 : this.currentState.spotify,

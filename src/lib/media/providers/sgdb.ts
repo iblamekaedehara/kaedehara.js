@@ -5,9 +5,9 @@
  * from environment variables — never exposed to the client.
  *
  * Filtering strategy: fetch bare endpoints (no query params that could 400)
- * and filter client-side by mime type. Accept any static format (PNG, JPEG,
- * WEBP) — reject ICO. SGDB assets are returned sorted by score descending
- * so the first valid match is already the best.
+ * and filter client-side. For icons, apply semantic ranking that optimizes
+ * for canonical game identity (the "face" of the game) rather than raw
+ * community score. SGDB assets are returned sorted by score descending.
  */
 import { cacheGet, cacheSet, cacheKey, dedupe } from "../cache";
 
@@ -35,6 +35,7 @@ interface SGBDAsset {
   style?: string;
   nsfw?: boolean;
   humor?: boolean;
+  score?: number;
 }
 
 interface SGBDAssetResult {
@@ -78,17 +79,13 @@ async function fetchJSON<T>(url: string): Promise<T | null> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-/** Reject ICO (Windows icon format — browsers can't render it) and animated GIFs. */
 function isRenderableImage(asset: SGBDAsset): boolean {
   const mime = asset.mime ?? "";
-  // Reject ICO, SVG (icons tab shouldn't have SVGs), and animated GIFs
   if (mime === "image/x-icon" || mime === "image/vnd.microsoft.icon") return false;
   if (mime === "image/gif" && asset.url?.includes(".gif")) return false;
-  // Accept: image/png, image/jpeg, image/webp, image/gif (static only assumed)
   return mime.startsWith("image/");
 }
 
-/** Filter to HTTPS-only URLs to avoid mixed-content warnings. */
 function hasSecureUrl(asset: SGBDAsset): boolean {
   return asset.url?.startsWith("https://") ?? false;
 }
@@ -106,7 +103,6 @@ export async function searchGame(displayName: string): Promise<number | null> {
     const data = await fetchJSON<SGBDSearchResult>(
       `https://www.steamgriddb.com/api/v2/search/autocomplete/${encodeURIComponent(displayName)}`,
     );
-    // Prefer verified results, fall back to first match
     const gameId =
       data?.data?.find((g) => g.verified)?.id ??
       data?.data?.[0]?.id ??
@@ -118,14 +114,68 @@ export async function searchGame(displayName: string): Promise<number | null> {
   return result;
 }
 
+// ── Semantic icon ranking ─────────────────────────────────────────────────
+//
+// Presence icons represent a game's CANONICAL IDENTITY, not generic artwork.
+// The best icon is the one a user immediately associates with the game —
+// even if it has lower community score than a well-voted launcher or meme.
+//
+// Scoring model:
+//   base = community score (normalized 0–100)
+//   + official bonus
+//   + canonical identity bonus (globally recognizable, app-icon-like)
+//   - launcher/edition/ecosystem penalty
+//   - text-heavy / promotional penalty
+
+/** Keywords that indicate non-canonical branding — these should almost never be presence icons. */
+const DEPRIORITIZE_KEYWORDS = [
+  "launcher", "client", "manager", "hub", "modpack", "modded",
+  "installer", "updater", "beta", "alpha", "companion",
+  "mobile", "android", "ios", "edition", "collection",
+  "bundle", "trilogy", "soundtrack", "demo", "test", "benchmark",
+  "server", "plugin", "addon", "expansion", "dlc",
+];
+
+/** Keywords that indicate high-quality canonical identity icons. */
+const CANONICAL_KEYWORDS = [
+  "icon", "logo", "app", "official", "classic", "original",
+  "main", "standard", "default", "primary",
+];
+
+function rankIcon(asset: SGBDAsset): number {
+  let score = (asset.score ?? 50) / 100; // normalize to 0–1 range
+
+  // Official style bonus
+  if (asset.style === "official") score += 0.3;
+
+  // Canonical keywords in the asset metadata (SGDB includes author/name tags)
+  const searchText = JSON.stringify(asset).toLowerCase();
+  for (const kw of CANONICAL_KEYWORDS) {
+    if (searchText.includes(kw)) score += 0.05;
+  }
+
+  // Penalize deprioritized keywords
+  for (const kw of DEPRIORITIZE_KEYWORDS) {
+    if (searchText.includes(kw)) score -= 0.4;
+  }
+
+  // Penalize humor/meme uploads
+  if (asset.humor) score -= 0.5;
+
+  // Penalize NSFW
+  if (asset.nsfw) score -= 1.0;
+
+  return score;
+}
+
 // ── Icons ─────────────────────────────────────────────────────────────────
 
 /**
- * Fetch the best square static icon for a game.
+ * Fetch the best canonical identity icon for a presence card.
  *
- * Strategy: fetch ALL icons (no query params — prevents 400s from unknown
- * parameter combinations), then filter client-side to find the first
- * static, renderable, HTTPS asset. Prefers official style.
+ * Ranks eligible icons by semantic suitability (canonical identity, official
+ * style, absence of launcher/edition/meme keywords) rather than raw community
+ * score. Accepts PNG, JPEG, WEBP — rejects ICO.
  */
 export async function fetchIcons(gameId: number): Promise<string | null> {
   const key = cacheKey("sgdb", "icons", String(gameId));
@@ -139,18 +189,30 @@ export async function fetchIcons(gameId: number): Promise<string | null> {
 
     if (!data?.data?.length) return null;
 
-    // SGDB returns sorted by score. Filter to renderable, secure assets.
-    // Prefer official style, then fall back to any valid static icon.
-    const eligible = data.data.filter((a) => isRenderableImage(a) && hasSecureUrl(a));
-    const official = eligible.find((a) => a.style === "official");
-    const best = official ?? eligible[0];
+    const eligible = data.data
+      .filter((a) => isRenderableImage(a) && hasSecureUrl(a))
+      .filter((a) => !a.nsfw); // outright reject NSFW
 
-    if (!best) {
+    if (!eligible.length) {
       console.warn(`[media] SGDB: no renderable icon found for gameId=${gameId}`);
       return null;
     }
 
-    return best.url;
+    // Rank by semantic suitability, then pick the best
+    const ranked = eligible
+      .map((a) => ({ asset: a, rank: rankIcon(a) }))
+      .sort((a, b) => b.rank - a.rank);
+
+    const best = ranked[0];
+
+    console.log(
+      `[media] SGDB: selected icon for gameId=${gameId}`,
+      `rank=${best.rank.toFixed(2)}`,
+      `style=${best.asset.style ?? "unknown"}`,
+      `score=${best.asset.score ?? "?"}`,
+    );
+
+    return best.asset.url;
   });
 
   cacheSet(key, result, result === null ? NULL_TTL_MS : undefined);
